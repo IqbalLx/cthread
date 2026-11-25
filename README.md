@@ -25,17 +25,45 @@ cthread runs the official `claude` binary in a PTY, so it uses your existing
 Claude subscription and settings. It never calls the Anthropic API and never
 reads your credentials.
 
-## Install
+## Quickstart
 
-Requires Rust 1.85+ and Claude Code (`claude` on your `PATH`). Runs on macOS and Linux.
+Install [Claude Code](https://claude.com/claude-code) first, then run:
 
 ```sh
-cargo install --path .
-# or build a release binary
-cargo build --release   # → target/release/cthread
+curl -fsSL https://raw.githubusercontent.com/IqbalLx/cthread/main/install.sh | bash
 ```
 
 Then run `cthread` in a project folder. Use `cthread doctor` to check your setup.
+
+The script works on macOS (Apple Silicon and Intel) and Linux (x86_64 and arm64). It
+downloads the latest release binary, checks its SHA-256 checksum, and installs it into
+`~/.local/bin`. If no prebuilt binary matches your machine, it builds from
+source with `cargo`. To change what it does:
+
+```sh
+# a specific version, somewhere else
+curl -fsSL https://raw.githubusercontent.com/IqbalLx/cthread/main/install.sh \
+  | CTHREAD_VERSION=v0.1.0 CTHREAD_INSTALL_DIR=~/bin bash
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CTHREAD_VERSION` | latest | Release tag to install |
+| `CTHREAD_INSTALL_DIR` | `~/.local/bin` | Where the binary goes |
+| `CTHREAD_FROM_SOURCE` | `0` | `1` builds with `cargo` instead of downloading |
+
+To uninstall, delete `~/.local/bin/cthread` (and, if you want, the state folder
+listed under [Configuration](#configuration)).
+
+### From source
+
+Requires Rust 1.85+.
+
+```sh
+cargo install --git https://github.com/IqbalLx/cthread --locked
+# or, from a checkout
+cargo install --path .
+```
 
 ## Using it
 
@@ -187,6 +215,21 @@ CTHREAD_LOG=/tmp/cthread.log cthread                     # debug log
 The integration tests drive cthread headless (ratatui `TestBackend`) against
 `tests/fake-claude`, a stand-in binary that accepts the same flags, writes
 transcripts and fires hooks. CI needs no Claude subscription.
+
+### Releasing
+
+1. Bump `version` in `Cargo.toml`, commit, and push.
+2. Tag the commit and push the tag: `git tag v0.1.0 && git push origin v0.1.0`.
+
+The `release` workflow then:
+
+- runs the tests;
+- builds macOS (arm64, x86_64) and static Linux musl (x86_64, arm64) binaries;
+- publishes `cthread-<target>.tar.gz` and its `.sha256` on a GitHub release;
+- runs the `curl | bash` install against that release.
+
+The tag must match the `Cargo.toml` version. To re-run a release for an existing
+tag, start the workflow manually (Actions → release → Run workflow).
 
 ### Manual release checklist (real Claude Code)
 
