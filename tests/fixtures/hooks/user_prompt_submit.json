@@ -1,0 +1,9 @@
+{
+  "session_id": "e85d1141-4528-4332-8d2c-ab32b1fba3de",
+  "transcript_path": "/Users/me/.claude/projects/-Users-me-code-shop/e85d1141-4528-4332-8d2c-ab32b1fba3de.jsonl",
+  "cwd": "/Users/me/code/shop",
+  "prompt_id": "d7543caf-d5bb-4f02-92f8-ced2934cb407",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Reply with just the word apple."
+}

@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 50, 12)"
+---
+
+
+
+
+
+                terminal too small
+                need at least 60x15

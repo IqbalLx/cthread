@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 130, 20)"
+---
+┌ THREADS ───────────┐┏ main ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌ # stripe vs paddle pricing ───────────────────── ✕ ┐
+│ ≡ main             │┃                                                    ┃│forked from main · Nov 20 07:32                     │
+│────────────────────│┃                                                    ┃│                                                    │
+│▌◌ stripe vs paddle…│┃    ╭ Pull "stripe vs paddle pricing" into main ───────────────────────────────╮                          │
+│ ● auth refactor wi…│┃    │- Paddle is merchant of record, handles EU VAT                            │                          │
+│ ◌ fix flaky test   │┃    │- Stripe is ~1% cheaper but we'd file VAT ourselves                       │                          │
+│ ◌ ⎇ db schema      │┃    │- Open question: do we need invoicing for B2B?                            │                          │
+│ ◌ 日本語のスレッド…│┃    │                                                                          │                          │
+│                    │┃    │                                                                          │                          │
+│                    │┃    │                                                                          │                          │
+│                    │┃    │                                                                          │— restoring…              │
+│                    │┃    │                                                                          │                          │
+│                    │┃    │                                                                          │                          │
+│                    │┃    │                                                                          │                          │
+│                    │┃    │Enter insert into main   e edit   E $EDITOR   r regenerate   Esc cancel   │                          │
+│                    │┃    ╰──────────────────────────────────────────────────────────────────────────╯                          │
+│                    │┃                                                    ┃│                                                    │
+│ + New thread   ^]n │┃                                                    ┃│                                                    │
+└────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└────────────────────────────────────────────────────┘
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help

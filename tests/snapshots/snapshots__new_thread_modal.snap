@@ -1,0 +1,22 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 130, 18)"
+---
+┌ THREADS ───────────┐┏ main ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│▌≡ main             │┃                                                                                                          ┃
+│────────────────────│┃                                                                                                          ┃
+│ ◌ stripe vs paddle…│┃                                                                                                          ┃
+│ ● auth refactor wi…│┃            ╭ New thread ──────────────────────────────────────────────╮                                  ┃
+│ ◌ fix flaky test   │┃            │Forks main as it is right now.                            │                                  ┃
+│ ◌ ⎇ db schema      │┃            │                                                          │                                  ┃
+│ ◌ 日本語のスレッド…│┃            │Title     stripe vs paddle pricing                        │                                  ┃
+│                    │┃            │[ ] Isolate in a git worktree                             │                                  ┃
+│                    │┃            │! Uncommitted changes in main won't be in the worktree    │                                  ┃
+│                    │┃            │                                                          │                                  ┃
+│                    │┃            │Enter create   Tab toggle   Esc cancel                    │                                  ┃
+│                    │┃            ╰──────────────────────────────────────────────────────────╯                                  ┃
+│                    │┃                                                                                                          ┃
+│                    │┃                                                                                                          ┃
+│ + New thread   ^]n │┃                                                                                                          ┃
+└────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help

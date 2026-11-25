@@ -1,0 +1,8 @@
+{
+  "session_id": "e85d1141-4528-4332-8d2c-ab32b1fba3de",
+  "transcript_path": "/Users/me/.claude/projects/-Users-me-code-shop/e85d1141-4528-4332-8d2c-ab32b1fba3de.jsonl",
+  "cwd": "/Users/me/code/shop",
+  "hook_event_name": "Notification",
+  "message": "Claude needs your permission to use Bash",
+  "notification_type": "permission_prompt"
+}

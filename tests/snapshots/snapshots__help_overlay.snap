@@ -1,0 +1,32 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 130, 28)"
+---
+┌ THREADS ───────────┐┏ main ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│▌≡ main             │┃                                                                                                          ┃
+│────────────────────│┃          ╭ Keys ────────────────────────────────────────────────────────╮                                ┃
+│ ◌ stripe vs paddle…│┃          │^] n          New thread (forks main)                         │                                ┃
+│ ● auth refactor wi…│┃          │^] p          Pull the open thread into main                  │                                ┃
+│ ◌ fix flaky test   │┃          │^] x          Close the thread pane                           │                                ┃
+│ ◌ ⎇ db schema      │┃          │^] h / l      Focus left / right                              │                                ┃
+│ ◌ 日本語のスレッド…│┃          │^] j / k      Open next / previous thread                     │                                ┃
+│                    │┃          │^] 1…9        Open thread by position                         │                                ┃
+│                    │┃          │^] m          Focus main                                      │                                ┃
+│                    │┃          │^] r          Rename thread                                   │                                ┃
+│                    │┃          │^] J / K      Move thread down / up                           │                                ┃
+│                    │┃          │^] a          Archive thread                                  │                                ┃
+│                    │┃          │^] A          Show archived threads                           │                                ┃
+│                    │┃          │^] D          Delete thread                                   │                                ┃
+│                    │┃          │^] < / >      Shrink / grow the thread pane                   │                                ┃
+│                    │┃          │^] b          Toggle sidebar                                  │                                ┃
+│                    │┃          │^] ?          This help                                       │                                ┃
+│                    │┃          │^] q          Quit                                            │                                ┃
+│                    │┃          │^] ^]         Send a literal prefix key                       │                                ┃
+│                    │┃          │                                                              │                                ┃
+│                    │┃          │sidebar       j/k move · Enter open · r a n D J K · Esc back  │                                ┃
+│                    │┃          │                                                              │                                ┃
+│                    │┃          │Esc close                                                     │                                ┃
+│                    │┃          ╰──────────────────────────────────────────────────────────────╯                                ┃
+│ + New thread   ^]n │┃                                                                                                          ┃
+└────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help

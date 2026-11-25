@@ -1,0 +1,11 @@
+{
+  "session_id": "1847c1e3-68cc-47ac-b8cf-2cde8d120b5c",
+  "transcript_path": "/Users/me/.claude/projects/-Users-me-code-shop/1847c1e3-68cc-47ac-b8cf-2cde8d120b5c.jsonl",
+  "cwd": "/Users/me/code/shop",
+  "hook_event_name": "SessionStart",
+  "source": "fork",
+  "seconds_since_last_response": 5,
+  "context_tokens": 25396,
+  "prompt_cache_likely_expired": false,
+  "estimated_cache_write_usd": 0.2032
+}

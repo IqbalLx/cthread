@@ -1,0 +1,20 @@
+---
+source: tests/snapshots.rs
+expression: collapsed
+---
+┌─┐┏ # stripe vs paddle pricing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ✕ ┓
+│≡│┃forked from main · Nov 20 07:32                                                      ┃
+│─│┃                                                                                     ┃
+│◌│┃                                                                                     ┃
+│●│┃                                                                                     ┃
+│◌│┃                                                                                     ┃
+│◌│┃                                                                                     ┃
+│◌│┃                                                                                     ┃
+│ │┃                              ◌ discarded — restoring…                               ┃
+│ │┃                                                                                     ┃
+│ │┃                                                                                     ┃
+│ │┃                                                                                     ┃
+│ │┃                                                                                     ┃
+│ │┃                                                                                     ┃
+└─┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help

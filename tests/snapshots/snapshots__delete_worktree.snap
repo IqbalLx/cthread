@@ -1,0 +1,20 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 130, 16)"
+---
+┌ THREADS ───────────┐┏ main ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│▌≡ main             │┃                                                                                                          ┃
+│────────────────────│┃                                                                                                          ┃
+│ ◌ stripe vs paddle…│┃                                                                                                          ┃
+│ ● auth refactor wi…│┃                                                                                                          ┃
+│ ◌ fix flaky test   │┃            ╭ Delete worktree thread ──────────────────────────────────╮                                  ┃
+│ ◌ ⎇ db schema      │┃            │This thread has a worktree on cthread/db-schema.          │                                  ┃
+│ ◌ 日本語のスレッド…│┃            │Keep the worktree, or remove it and its branch?           │                                  ┃
+│                    │┃            │                                                          │                                  ┃
+│                    │┃            │k keep worktree   r remove worktree + branch   Esc cancel │                                  ┃
+│                    │┃            ╰──────────────────────────────────────────────────────────╯                                  ┃
+│                    │┃                                                                                                          ┃
+│                    │┃                                                                                                          ┃
+│ + New thread   ^]n │┃                                                                                                          ┃
+└────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help

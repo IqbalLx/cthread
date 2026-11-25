@@ -1,0 +1,20 @@
+---
+source: tests/snapshots.rs
+expression: "render(&mut a, 130, 16)"
+---
+┌ THREADS ───────────┐┌ main ──────────────────────────────────────────────┐┏ # stripe vs paddle pricing ━━━━━━━━━━━━━━━━━━━━━ ✕ ┓
+│ ≡ main             ││                                                    │┃forked from main · Nov 20 07:32                     ┃
+│────────────────────││                                                    │┃                                                    ┃
+│▌◌ stripe vs paddle…││                                                    │┃                                                    ┃
+│ ● auth refactor wi…││                                                    │┃                                                    ┃
+│ ◌ fix flaky test   ││                                                    │┃                                                    ┃
+│ ◌ ⎇ db schema      ││                                                    │┃                                                    ┃
+│ ◌ 日本語のスレッド…││                                                    │┃                                                    ┃
+│                    ││                                                    │┃              ◌ discarded — restoring…              ┃
+│                    ││                                                    │┃                                                    ┃
+│                    ││                                                    │┃                                                    ┃
+│                    ││                                                    │┃                                                    ┃
+│                    ││                                                    │┃                                                    ┃
+│ + New thread   ^]n ││                                                    │┃                                                    ┃
+└────────────────────┘└────────────────────────────────────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help
