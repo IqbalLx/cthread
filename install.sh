@@ -105,10 +105,11 @@ install_binary() { # install_binary <target>
     tar -xzf "$tmp/$asset" -C "$tmp" || die "could not unpack $asset"
     mkdir -p "$INSTALL_DIR" || die "could not create $INSTALL_DIR"
     # Install via a temp name + rename so a running cthread isn't clobbered mid-write.
-    cp "$tmp/cthread" "$INSTALL_DIR/.cthread.new" &&
+    if ! { cp "$tmp/cthread" "$INSTALL_DIR/.cthread.new" &&
         chmod 755 "$INSTALL_DIR/.cthread.new" &&
-        mv -f "$INSTALL_DIR/.cthread.new" "$INSTALL_DIR/cthread" ||
+        mv -f "$INSTALL_DIR/.cthread.new" "$INSTALL_DIR/cthread"; }; then
         die "could not write $INSTALL_DIR/cthread"
+    fi
 }
 
 main() {
@@ -132,6 +133,7 @@ main() {
         *":$INSTALL_DIR:"*) ;;
         *)
             warn "$INSTALL_DIR is not on your PATH. Add this to your shell profile:"
+            # shellcheck disable=SC2016 # $PATH is meant to be printed literally
             printf '\n    export PATH="%s:$PATH"\n\n' "$INSTALL_DIR" >&2
             ;;
     esac

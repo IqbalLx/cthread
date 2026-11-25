@@ -457,6 +457,13 @@ mod tests {
         // process conflicts too.
         assert!(acquire_lock(&p).is_err());
         drop(l);
-        assert!(acquire_lock(&p).is_ok());
+        // flock locks are shared with forked children. Tests that spawn
+        // processes run in parallel, and a child forked while we held the
+        // lock keeps it until it execs, so allow a moment for that.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while acquire_lock(&p).is_err() {
+            assert!(std::time::Instant::now() < deadline, "lock not released after drop");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 }
