@@ -19,6 +19,6 @@ expression: "render(&mut a, 130, 20)"
 │                    │┃    │Enter insert into main   e edit   E $EDITOR   r regenerate   Esc cancel   │                          │
 │                    │┃    ╰──────────────────────────────────────────────────────────────────────────╯                          │
 │                    │┃                                                    ┃│                                                    │
-│ + New thread   ^]n │┃                                                    ┃│                                                    │
+│ + New thread   ^q n│┃                                                    ┃│                                                    │
 └────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└────────────────────────────────────────────────────┘
- ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help
+ ^q n new · p pull · x close · h/l focus · j/k next/prev · ? help

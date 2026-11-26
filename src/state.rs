@@ -50,6 +50,10 @@ pub struct ThreadRec {
     pub unread: bool,
     #[serde(default)]
     pub archived: bool,
+    /// Started with read-only tools. Claude Code doesn't restore tool limits
+    /// on resume, so cthread passes them on every start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
     /// Prompts submitted in this thread since the fork (for "Nothing new").
     #[serde(default)]
     pub turns: u32,
@@ -322,6 +326,7 @@ mod tests {
             last_viewed_at: None,
             unread: false,
             archived: false,
+            read_only: false,
             turns: 0,
         }
     }

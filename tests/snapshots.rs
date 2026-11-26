@@ -1,7 +1,7 @@
 //! Rendered-screen snapshots (insta) of the layouts and modals. No sessions
 //! are spawned; panes are empty so the chrome is deterministic.
 
-use cthread::app::{App, AppOptions, Focus, Modal, PullPhase};
+use cthread::app::{App, AppOptions, Focus, Modal, NewThreadField, PullPhase};
 use cthread::config::Config;
 use cthread::paths::ProjectPaths;
 use cthread::state::{State, Store, ThreadRec, WorktreeRec};
@@ -23,6 +23,7 @@ fn rec(id: &str, title: &str) -> ThreadRec {
         last_viewed_at: None,
         unread: false,
         archived: false,
+        read_only: false,
         turns: 2,
     }
 }
@@ -121,9 +122,25 @@ fn narrow_thread_and_overlay() {
 fn new_thread_modal() {
     let tmp = tempfile::tempdir().unwrap();
     let mut a = app(&tmp);
-    a.modal = Some(Modal::NewThread { input: TextArea::single("stripe vs paddle pricing"), worktree: false, git_ok: true, dirty: true, hint: None });
+    a.modal = Some(Modal::NewThread {
+        input: TextArea::single("stripe vs paddle pricing"),
+        worktree: false,
+        read_only: true,
+        field: NewThreadField::ReadOnly,
+        git_ok: true,
+        dirty: true,
+        hint: None,
+    });
     insta::assert_snapshot!(render(&mut a, 130, 18));
-    a.modal = Some(Modal::NewThread { input: TextArea::single(""), worktree: false, git_ok: false, dirty: false, hint: Some("Title is required".into()) });
+    a.modal = Some(Modal::NewThread {
+        input: TextArea::single(""),
+        worktree: false,
+        read_only: false,
+        field: NewThreadField::Title,
+        git_ok: false,
+        dirty: false,
+        hint: Some("Title is required".into()),
+    });
     insta::assert_snapshot!("new_thread_modal_empty", render(&mut a, 130, 18));
 }
 

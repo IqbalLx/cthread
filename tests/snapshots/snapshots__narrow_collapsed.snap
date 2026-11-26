@@ -17,4 +17,4 @@ expression: collapsed
 │ │┃                                                                                     ┃
 │ │┃                                                                                     ┃
 └─┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
- ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help
+ ^q n new · p pull · x close · h/l focus · j/k next/prev · ? help

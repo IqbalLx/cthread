@@ -454,6 +454,7 @@ fn worktree_thread_create_and_delete() {
     assert!(h.screen().contains("Isolate in a git worktree"));
     assert!(h.screen().contains("Uncommitted changes in main"));
     h.key(KeyCode::Tab, KeyModifiers::NONE);
+    h.ch(' ');
     assert!(h.screen().contains("[x] Isolate"));
     h.typ("DB schema");
     h.enter();
@@ -599,4 +600,88 @@ fn custom_claude_command() {
     assert_eq!(calls.matches("--profile my work").count(), 2, "{calls}");
     assert_eq!(calls.matches("--profile pull").count(), 1, "{calls}");
     h.quit();
+}
+
+#[test]
+fn custom_prefix_and_command_keys() {
+    let (mut c, w) = Config::parse(
+        "[keys]\nprefix = \"C-a\"\n[keys.commands]\nnew_thread = \"t\"\nclose = \"C-w\"\nhelp = \"H\"\n",
+    );
+    assert!(w.is_empty(), "{w:?}");
+    let base = cfg();
+    c.claude = base.claude;
+    c.pull = base.pull;
+    let mut h = H::new(160, 40, c);
+    wait_ready(&mut h);
+    h.wait_text("^a t new");
+    h.say("hello");
+
+    // the old prefix and the old command key do nothing special
+    h.key(KeyCode::Char(']'), KeyModifiers::CONTROL);
+    h.ch('n');
+    assert!(h.app.modal.is_none());
+    h.key(KeyCode::Char('a'), KeyModifiers::CONTROL);
+    h.ch('n');
+    assert!(h.app.modal.is_none(), "n is no longer new_thread");
+
+    // prefix C-a, then t: new thread
+    h.key(KeyCode::Char('a'), KeyModifiers::CONTROL);
+    h.ch('t');
+    assert!(matches!(h.app.modal, Some(Modal::NewThread { .. })), "{}", h.screen());
+    h.typ("rebound");
+    h.enter();
+    h.wait_text("# rebound");
+
+    // C-a C-w closes it; C-a H opens help, which lists the new keys
+    h.key(KeyCode::Char('a'), KeyModifiers::CONTROL);
+    h.key(KeyCode::Char('w'), KeyModifiers::CONTROL);
+    assert!(h.app.open_thread().is_none());
+    h.key(KeyCode::Char('a'), KeyModifiers::CONTROL);
+    h.ch('H');
+    assert!(matches!(h.app.modal, Some(Modal::Help)));
+    h.wait_text("^a t ");
+    h.wait_text("^a ^w ");
+    h.quit();
+}
+
+#[test]
+fn threads_drop_background_tasks_and_can_be_read_only() {
+    let mut h = H::new(240, 40, cfg());
+    wait_ready(&mut h);
+    // main keeps every tool
+    assert!(!h.screen().contains("disallowed="), "{}", h.screen());
+    h.say("hello");
+
+    // default thread: read-write, minus subagents/Monitor, background tasks off
+    let rw = h.new_thread("rw");
+    h.wait_text("[disallowed=Agent,Monitor,Workflow bg=off]");
+    assert!(!h.app.store.state.thread(&rw).unwrap().read_only);
+    h.cmd('x');
+
+    // read-only thread: Tab to the checkbox, Space to tick it, then type the title
+    h.cmd('n');
+    h.key(KeyCode::Tab, KeyModifiers::NONE);
+    h.ch(' ');
+    assert!(h.screen().contains("[x] Read-only tools"), "{}", h.screen());
+    assert!(h.screen().contains("Only Read, Grep, Glob, WebFetch, WebSearch (no MCP)"));
+    h.typ("ro");
+    h.enter();
+    let ro = h.app.open_thread().unwrap().to_string();
+    h.wait_text("[tools=Read,Grep,Glob,WebFetch,WebSearch disallowed=Agent,Monitor,Workflow");
+    h.wait_text("no-mcp bg=");
+    h.wait_text("read-only");
+    assert!(h.app.store.state.thread(&ro).unwrap().read_only);
+    h.say("in ro");
+
+    // after a restart the restored thread gets the same limits again
+    let (project, state_dir) = (h.project.clone(), h.state_dir.clone());
+    let keep = h._tmp.take();
+    h.quit();
+    let mut h = H::open(&project, &state_dir, 240, 40, cfg());
+    wait_ready(&mut h);
+    assert_eq!(h.app.open_thread(), Some(ro.as_str()));
+    h.wait_text("[tools=Read,Grep,Glob,WebFetch,WebSearch disallowed=Agent,Monitor,Workflow");
+    h.wait_text("no-mcp bg=");
+    h.quit();
+    drop(keep);
 }

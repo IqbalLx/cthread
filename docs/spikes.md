@@ -105,5 +105,22 @@ Findings:
 ## S5: inside luvus
 
 **Not run**: luvus is not available in this environment. Spike S5 still needs
-doing on a machine with luvus. The prefix (`Ctrl-]`) avoids luvus's
+doing on a machine with luvus. The default prefix (`Ctrl-Q`) avoids luvus's
 `Ctrl-Space`, and mouse capture can be turned off with `ui.mouse = false`.
+
+## S7: Thread tool limits (Claude Code 2.1.332, 2026-11-26)
+
+- `--disallowedTools` and `--tools` take a variadic list: every word after them
+  that isn't a flag is consumed. A prompt placed after them is read as a tool
+  name ("was read as a value of --disallowedTools, not as a prompt"). cthread
+  always follows them with another flag (`--settings …`).
+- With `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 --disallowedTools Agent,Monitor,Workflow`,
+  the model reports no Agent, Monitor or Workflow tool, and Bash has no
+  `run_in_background` parameter. All other tools, MCP included, remain.
+- Adding `--tools Read,Grep,Glob,WebFetch,WebSearch --strict-mcp-config` leaves
+  exactly Glob, Grep, Read, WebFetch, WebSearch. Without `--strict-mcp-config`,
+  MCP tools (some of which write) are still available, because `--tools` only
+  limits built-in tools.
+- Docs: tool limits (`--tools`, `--allowedTools`, `--disallowedTools`) are not
+  restored on `--resume`, so they must be passed on every start. Background Bash
+  and Monitor tasks are not restored on resume either.

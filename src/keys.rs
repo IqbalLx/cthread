@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::{Duration, Instant};
 
-/// The command prefix key (default Ctrl-]).
+/// A command prefix key (default Ctrl-Space, with Ctrl-] as a fallback).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Prefix {
     pub ch: char,
@@ -12,8 +12,9 @@ pub struct Prefix {
 }
 
 impl Prefix {
-    /// Parse "C-]", "C-a", "M-x", "C-M-b".
+    /// Parse "C-Space", "C-]", "C-a", "M-x", "C-M-b".
     pub fn parse(s: &str) -> Option<Prefix> {
+        let s = s.trim();
         let mut ctrl = false;
         let mut alt = false;
         let mut rest = s;
@@ -28,12 +29,23 @@ impl Prefix {
                 break;
             }
         }
-        let mut chars = rest.chars();
-        let ch = chars.next()?;
-        if chars.next().is_some() || !(ctrl || alt) {
+        if !(ctrl || alt) {
             return None;
         }
-        Some(Prefix { ch: ch.to_ascii_lowercase(), ctrl, alt })
+        let ch = match rest.to_ascii_lowercase().as_str() {
+            "space" | "spc" => ' ',
+            // Ctrl-@ and Ctrl-Space send the same byte (NUL).
+            "@" if ctrl => ' ',
+            _ => {
+                let mut chars = rest.chars();
+                let ch = chars.next()?;
+                if chars.next().is_some() {
+                    return None;
+                }
+                ch.to_ascii_lowercase()
+            }
+        };
+        Some(Prefix { ch, ctrl, alt })
     }
 
     pub fn matches(&self, k: &KeyEvent) -> bool {
@@ -47,12 +59,17 @@ impl Prefix {
         if c == self.ch {
             return true;
         }
-        // Legacy terminals send 0x1c..0x1f for C-\ C-] C-^ C-_, which crossterm
-        // reports as Ctrl-4..Ctrl-7.
-        self.ctrl && matches!((self.ch, c), ('\\', '4') | (']', '5') | ('^', '6') | ('_', '7'))
+        // Legacy terminals send 0x00 for C-Space and 0x1c..0x1f for
+        // C-\ C-] C-^ C-_, which crossterm may report as Ctrl-@/Ctrl-2 and
+        // Ctrl-4..Ctrl-7.
+        self.ctrl
+            && matches!(
+                (self.ch, c),
+                (' ', '@') | (' ', '2') | ('\\', '4') | (']', '5') | ('^', '6') | ('_', '7')
+            )
     }
 
-    /// Display form, e.g. `^]`.
+    /// Display form, e.g. `^]` or `^Space`.
     pub fn label(&self) -> String {
         let mut s = String::new();
         if self.alt {
@@ -61,7 +78,11 @@ impl Prefix {
         if self.ctrl {
             s.push('^');
         }
-        s.push(self.ch);
+        if self.ch == ' ' {
+            s.push_str("Space");
+        } else {
+            s.push(self.ch);
+        }
         s
     }
 
@@ -82,8 +103,8 @@ pub enum KeyOutcome {
     Armed,
     /// Prefix + this key: a cthread command.
     Command(KeyEvent),
-    /// Prefix + prefix: send a literal prefix to the pane.
-    LiteralPrefix,
+    /// Prefix + prefix: send this prefix key literally to the pane.
+    LiteralPrefix(Prefix),
     /// Key ignored (release events, etc).
     Ignore,
 }
@@ -92,13 +113,24 @@ pub const PREFIX_HINT: Duration = Duration::from_millis(1500);
 
 #[derive(Debug)]
 pub struct PrefixMachine {
-    pub prefix: Prefix,
+    /// Every key that arms the machine. The first is shown in hints.
+    pub prefixes: Vec<Prefix>,
     armed_at: Option<Instant>,
 }
 
 impl PrefixMachine {
-    pub fn new(prefix: Prefix) -> Self {
-        Self { prefix, armed_at: None }
+    pub fn new(prefixes: Vec<Prefix>) -> Self {
+        assert!(!prefixes.is_empty(), "at least one prefix key");
+        Self { prefixes, armed_at: None }
+    }
+
+    /// The prefix shown in hints and help.
+    pub fn primary(&self) -> Prefix {
+        self.prefixes[0]
+    }
+
+    fn matching(&self, k: &KeyEvent) -> Option<Prefix> {
+        self.prefixes.iter().copied().find(|p| p.matches(k))
     }
 
     pub fn is_armed(&self) -> bool {
@@ -115,8 +147,8 @@ impl PrefixMachine {
             return KeyOutcome::Ignore;
         }
         if self.armed_at.take().is_some() {
-            if self.prefix.matches(&k) {
-                return KeyOutcome::LiteralPrefix;
+            if let Some(p) = self.matching(&k) {
+                return KeyOutcome::LiteralPrefix(p);
             }
             // Bare modifier presses (kitty protocol) don't count.
             if matches!(k.code, KeyCode::Modifier(_)) {
@@ -125,7 +157,7 @@ impl PrefixMachine {
             }
             return KeyOutcome::Command(k);
         }
-        if self.prefix.matches(&k) {
+        if self.matching(&k).is_some() {
             self.armed_at = Some(Instant::now());
             return KeyOutcome::Armed;
         }
@@ -288,6 +320,22 @@ mod tests {
         assert!(Prefix::parse("]").is_none());
         assert!(Prefix::parse("C-ab").is_none());
         assert_eq!(Prefix::parse("M-x").unwrap().bytes(), vec![0x1b, b'x']);
+        let sp = Prefix::parse("C-Space").unwrap();
+        assert_eq!(sp, Prefix { ch: ' ', ctrl: true, alt: false });
+        assert_eq!(sp.label(), "^Space");
+        assert_eq!(sp.bytes(), vec![0]);
+        assert_eq!(Prefix::parse("C-space"), Some(sp));
+        assert_eq!(Prefix::parse("C-@"), Some(sp));
+        assert!(Prefix::parse("Space").is_none());
+    }
+
+    #[test]
+    fn ctrl_space_matches_every_encoding() {
+        let p = Prefix::parse("C-Space").unwrap();
+        for c in [' ', '@', '2'] {
+            assert!(p.matches(&key(KeyCode::Char(c), KeyModifiers::CONTROL)), "{c:?}");
+        }
+        assert!(!p.matches(&key(KeyCode::Char(' '), KeyModifiers::NONE)));
     }
 
     #[test]
@@ -300,7 +348,7 @@ mod tests {
 
     #[test]
     fn machine() {
-        let mut m = PrefixMachine::new(Prefix::parse("C-]").unwrap());
+        let mut m = PrefixMachine::new(vec![Prefix::parse("C-]").unwrap()]);
         let a = key(KeyCode::Char('a'), KeyModifiers::NONE);
         let pre = key(KeyCode::Char(']'), KeyModifiers::CONTROL);
         assert_eq!(m.feed(a), KeyOutcome::Forward(a));
@@ -310,11 +358,31 @@ mod tests {
         assert_eq!(m.feed(n), KeyOutcome::Command(n));
         assert!(!m.is_armed());
         assert_eq!(m.feed(pre), KeyOutcome::Armed);
-        assert_eq!(m.feed(pre), KeyOutcome::LiteralPrefix);
+        assert_eq!(m.feed(pre), KeyOutcome::LiteralPrefix(Prefix::parse("C-]").unwrap()));
         assert_eq!(m.feed(a), KeyOutcome::Forward(a));
         let mut rel = a;
         rel.kind = KeyEventKind::Release;
         assert_eq!(m.feed(rel), KeyOutcome::Ignore);
+    }
+
+    #[test]
+    fn several_prefixes() {
+        let sp = Prefix::parse("C-Space").unwrap();
+        let br = Prefix::parse("C-]").unwrap();
+        let mut m = PrefixMachine::new(vec![sp, br]);
+        assert_eq!(m.primary(), sp);
+        let ctrl_space = key(KeyCode::Char(' '), KeyModifiers::CONTROL);
+        let ctrl_br = key(KeyCode::Char(']'), KeyModifiers::CONTROL);
+        let n = key(KeyCode::Char('n'), KeyModifiers::NONE);
+        assert_eq!(m.feed(ctrl_space), KeyOutcome::Armed);
+        assert_eq!(m.feed(n), KeyOutcome::Command(n));
+        assert_eq!(m.feed(ctrl_br), KeyOutcome::Armed);
+        assert_eq!(m.feed(n), KeyOutcome::Command(n));
+        // the literal sent is the key pressed second
+        assert_eq!(m.feed(ctrl_space), KeyOutcome::Armed);
+        assert_eq!(m.feed(ctrl_space), KeyOutcome::LiteralPrefix(sp));
+        assert_eq!(m.feed(ctrl_br), KeyOutcome::Armed);
+        assert_eq!(m.feed(ctrl_br), KeyOutcome::LiteralPrefix(br));
     }
 
     #[test]

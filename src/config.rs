@@ -19,7 +19,38 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Keys {
-    pub prefix: String,
+    /// One key or a list of keys; any of them starts a command. The first is
+    /// the one shown in hints.
+    #[serde(deserialize_with = "one_or_many")]
+    pub prefix: Vec<String>,
+    /// Command key per action, e.g. `new_thread = "t"` or `pull = ["p", "C-p"]`.
+    #[serde(deserialize_with = "map_one_or_many")]
+    pub commands: std::collections::BTreeMap<String, Vec<String>>,
+    /// Built from `commands` during validation.
+    #[serde(skip)]
+    pub keymap: crate::keymap::Keymap,
+}
+
+fn map_one_or_many<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<std::collections::BTreeMap<String, Vec<String>>, D::Error> {
+    #[derive(Deserialize)]
+    struct W(#[serde(deserialize_with = "one_or_many")] Vec<String>);
+    let m: std::collections::BTreeMap<String, W> = Deserialize::deserialize(d)?;
+    Ok(m.into_iter().map(|(k, W(v))| (k, v)).collect())
+}
+
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v,
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,7 +141,11 @@ pub struct Pull {
 
 impl Default for Keys {
     fn default() -> Self {
-        Self { prefix: "C-]".into() }
+        Self {
+            prefix: vec!["C-q".into(), "C-]".into()],
+            commands: Default::default(),
+            keymap: Default::default(),
+        }
     }
 }
 impl Default for Ui {
@@ -176,10 +211,16 @@ impl Config {
 
     fn validate(&mut self, w: &mut Vec<String>) {
         let d = Config::default();
-        if crate::keys::Prefix::parse(&self.keys.prefix).is_none() {
-            w.push(format!("config: keys.prefix {:?} is not a key like \"C-]\"; using default", self.keys.prefix));
-            self.keys.prefix = d.keys.prefix;
+        let mut keys = Vec::new();
+        for k in std::mem::take(&mut self.keys.prefix) {
+            if crate::keys::Prefix::parse(&k).is_some() {
+                keys.push(k);
+            } else {
+                w.push(format!("config: keys.prefix {k:?} is not a key like \"C-q\" or \"C-]\"; ignoring it"));
+            }
         }
+        self.keys.prefix = if keys.is_empty() { d.keys.prefix } else { keys };
+        self.keys.keymap = crate::keymap::Keymap::build(&self.keys.commands, w);
         if !(8..=60).contains(&self.ui.sidebar_width) {
             w.push("config: ui.sidebar_width must be 8..=60; using 22".into());
             self.ui.sidebar_width = d.ui.sidebar_width;
@@ -217,8 +258,33 @@ mod tests {
         let (c, w) = Config::parse("");
         assert!(w.is_empty());
         assert_eq!(c.ui.sidebar_width, 22);
-        assert_eq!(c.keys.prefix, "C-]");
+        assert_eq!(c.keys.prefix, vec!["C-q", "C-]"]);
         assert_eq!(c.threads.max_live, 5);
+    }
+
+    #[test]
+    fn prefix_one_or_many() {
+        let (c, w) = Config::parse("[keys]\nprefix = \"C-a\"\n");
+        assert!(w.is_empty());
+        assert_eq!(c.keys.prefix, vec!["C-a"]);
+        let (c, w) = Config::parse("[keys]\nprefix = [\"C-Space\", \"bogus\", \"C-]\"]\n");
+        assert_eq!(c.keys.prefix, vec!["C-Space", "C-]"]);
+        assert_eq!(w.len(), 1);
+        let (c, w) = Config::parse("[keys]\nprefix = []\n");
+        assert!(w.is_empty());
+        assert_eq!(c.keys.prefix, vec!["C-q", "C-]"]);
+    }
+
+    #[test]
+    fn command_keys() {
+        use crate::keymap::Action;
+        let (c, w) = Config::parse(
+            "[keys]\nprefix = \"C-a\"\n[keys.commands]\nnew_thread = \"t\"\npull = [\"P\", \"C-p\"]\nnope = \"z\"\n",
+        );
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(c.keys.keymap.label(Action::NewThread), "t");
+        assert_eq!(c.keys.keymap.label(Action::Pull), "P");
+        assert_eq!(c.keys.keymap.label(Action::Quit), "q");
     }
 
     #[test]

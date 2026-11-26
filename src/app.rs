@@ -3,6 +3,7 @@
 
 use crate::config::Config;
 use crate::hooks::{HookEvent, HookMsg};
+use crate::keymap::Action;
 use crate::keys::{self, KeyOutcome, Prefix, PrefixMachine};
 use crate::layout::{self, Layout, LayoutInput};
 use crate::pane::{Pane, PaneNotice, SpawnSpec};
@@ -86,7 +87,16 @@ pub enum PullPhase {
 }
 
 pub enum Modal {
-    NewThread { input: TextArea, worktree: bool, git_ok: bool, dirty: bool, hint: Option<String> },
+    NewThread {
+        input: TextArea,
+        worktree: bool,
+        read_only: bool,
+        /// Highlighted row: the title, or one of the checkboxes.
+        field: NewThreadField,
+        git_ok: bool,
+        dirty: bool,
+        hint: Option<String>,
+    },
     Rename { id: String, input: TextArea, hint: Option<String> },
     Pull { thread: String, title: String, job: u64, cancel: Arc<AtomicBool>, phase: PullPhase, text: TextArea, editing: bool },
     Archived { selected: usize },
@@ -145,9 +155,45 @@ fn now_utc() -> chrono::DateTime<Utc> {
     Utc::now()
 }
 
+/// Rows of the new-thread dialog that Tab moves between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewThreadField {
+    Title,
+    Worktree,
+    ReadOnly,
+}
+
+impl NewThreadField {
+    pub fn available(git_ok: bool) -> &'static [NewThreadField] {
+        if git_ok {
+            &[NewThreadField::Title, NewThreadField::Worktree, NewThreadField::ReadOnly]
+        } else {
+            &[NewThreadField::Title, NewThreadField::ReadOnly]
+        }
+    }
+}
+
+/// Tools a read-only thread keeps.
+pub const READ_ONLY_TOOLS: &str = "Read,Grep,Glob,WebFetch,WebSearch";
+
+/// Tool flags for every thread start (fork and resume). Threads never get
+/// subagents (Agent, Workflow) or Monitor; read-only threads also get only
+/// read-only built-in tools and no MCP servers. Both flags take a variadic
+/// list, so `spawn` always follows them with another flag (`--settings`).
+pub fn thread_tool_args(read_only: bool) -> Vec<String> {
+    let mut a = vec!["--disallowedTools".to_string(), "Agent,Monitor,Workflow".to_string()];
+    if read_only {
+        a.extend(["--tools".to_string(), READ_ONLY_TOOLS.to_string(), "--strict-mcp-config".to_string()]);
+    }
+    a
+}
+
 impl App {
     pub fn new(cfg: Config, paths: ProjectPaths, store: Store, opts: AppOptions, notify: Notify) -> Result<App> {
-        let prefix = Prefix::parse(&cfg.keys.prefix).unwrap_or(Prefix { ch: ']', ctrl: true, alt: false });
+        let mut prefixes: Vec<Prefix> = cfg.keys.prefix.iter().filter_map(|k| Prefix::parse(k)).collect();
+        if prefixes.is_empty() {
+            prefixes.push(Prefix { ch: 'q', ctrl: true, alt: false });
+        }
         std::fs::create_dir_all(&paths.state_dir).ok();
         std::fs::write(&paths.settings_file, crate::hooks::settings_json(&opts.hook_exe))
             .with_context(|| format!("writing {}", paths.settings_file.display()))?;
@@ -160,7 +206,7 @@ impl App {
             cfg,
             paths,
             store,
-            prefix: PrefixMachine::new(prefix),
+            prefix: PrefixMachine::new(prefixes),
             notify,
             main: Session::new(),
             main_unread: false,
@@ -276,12 +322,12 @@ impl App {
         let program = argv.remove(0);
         argv.extend(args);
         argv.extend(self.base_args());
-        let spec = SpawnSpec {
-            program,
-            args: argv,
-            cwd,
-            env: vec![("CTHREAD_SOCK".into(), self.paths.socket.to_string_lossy().to_string())],
-        };
+        let mut env = vec![("CTHREAD_SOCK".into(), self.paths.socket.to_string_lossy().to_string())];
+        if matches!(owner, Owner::Thread(_)) {
+            // Threads never run background Bash or background subagents.
+            env.push(("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS".into(), "1".into()));
+        }
+        let spec = SpawnSpec { program, args: argv, cwd, env };
         let n = self.notify.clone();
         crate::dlog!("spawn {:?} {} {:?} in {} ({rows}x{cols})", owner, spec.program, spec.args, spec.cwd.display());
         let pane = Pane::spawn(&spec, rows, cols, Arc::new(move |p| n(AppEvent::Pane(p))))?;
@@ -350,7 +396,9 @@ impl App {
             return;
         };
         let pty = self.compute_thread_pty();
-        match self.spawn(Owner::Thread(id.to_string()), t.cwd.clone(), vec!["--resume".into(), sid], pty.height, pty.width) {
+        let mut args = vec!["--resume".into(), sid];
+        args.extend(thread_tool_args(t.read_only));
+        match self.spawn(Owner::Thread(id.to_string()), t.cwd.clone(), args, pty.height, pty.width) {
             Ok(p) => {
                 let s = self.threads.entry(id.to_string()).or_default();
                 s.pane = Some(p);
@@ -659,8 +707,8 @@ impl App {
         match self.prefix.feed(k) {
             KeyOutcome::Ignore | KeyOutcome::Armed => {}
             KeyOutcome::Command(c) => self.on_command(c),
-            KeyOutcome::LiteralPrefix => {
-                let b = self.prefix.prefix.bytes();
+            KeyOutcome::LiteralPrefix(p) => {
+                let b = p.bytes();
                 self.send_to_focused(&b);
             }
             KeyOutcome::Forward(k) => {
@@ -726,38 +774,43 @@ impl App {
     }
 
     fn on_command(&mut self, k: KeyEvent) {
-        let shift = k.modifiers.contains(KeyModifiers::SHIFT);
-        let KeyCode::Char(c) = k.code else {
-            return; // unknown key cancels silently
-        };
-        let c = if shift && c.is_ascii_lowercase() { c.to_ascii_uppercase() } else { c };
-        match c {
-            'n' => self.cmd_new_thread(),
-            'p' => self.cmd_pull(),
-            'x' => self.close_thread(),
-            'h' => self.move_focus(-1),
-            'l' => self.move_focus(1),
-            'j' => self.cycle_thread(1),
-            'k' => self.cycle_thread(-1),
-            '1'..='9' => {
-                let i = c as usize - '1' as usize;
-                if let Some(id) = self.visible_threads().get(i).map(|t| t.id.clone()) {
-                    self.open(&id);
-                }
+        // 1-9 always open a thread by position.
+        if let KeyCode::Char(c @ '1'..='9') = k.code
+            && !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            let i = c as usize - '1' as usize;
+            if let Some(id) = self.visible_threads().get(i).map(|t| t.id.clone()) {
+                self.open(&id);
             }
-            'm' => self.focus_main(),
-            'r' => self.cmd_rename(),
-            'J' => self.move_thread(1),
-            'K' => self.move_thread(-1),
-            'a' => self.cmd_archive(),
-            'A' => self.modal = Some(Modal::Archived { selected: 0 }),
-            'D' => self.cmd_delete(),
-            '<' => self.resize_split(SPLIT_STEP),
-            '>' => self.resize_split(-SPLIT_STEP),
-            'b' => self.toggle_sidebar(),
-            '?' => self.modal = Some(Modal::Help),
-            'q' => self.cmd_quit(),
-            _ => {}
+            return;
+        }
+        // An unbound key cancels silently.
+        if let Some(a) = self.cfg.keys.keymap.action_for(&k) {
+            self.run_action(a);
+        }
+    }
+
+    fn run_action(&mut self, a: Action) {
+        match a {
+            Action::NewThread => self.cmd_new_thread(),
+            Action::Pull => self.cmd_pull(),
+            Action::Close => self.close_thread(),
+            Action::FocusLeft => self.move_focus(-1),
+            Action::FocusRight => self.move_focus(1),
+            Action::NextThread => self.cycle_thread(1),
+            Action::PrevThread => self.cycle_thread(-1),
+            Action::FocusMain => self.focus_main(),
+            Action::Rename => self.cmd_rename(),
+            Action::MoveDown => self.move_thread(1),
+            Action::MoveUp => self.move_thread(-1),
+            Action::Archive => self.cmd_archive(),
+            Action::ShowArchived => self.modal = Some(Modal::Archived { selected: 0 }),
+            Action::Delete => self.cmd_delete(),
+            Action::Shrink => self.resize_split(SPLIT_STEP),
+            Action::Grow => self.resize_split(-SPLIT_STEP),
+            Action::ToggleSidebar => self.toggle_sidebar(),
+            Action::Help => self.modal = Some(Modal::Help),
+            Action::Quit => self.cmd_quit(),
         }
     }
 
@@ -773,13 +826,6 @@ impl App {
                     self.open(&id);
                 }
             }
-            KeyCode::Char('r') => self.cmd_rename(),
-            KeyCode::Char('a') => self.cmd_archive(),
-            KeyCode::Char('n') => self.cmd_new_thread(),
-            KeyCode::Char('p') => self.cmd_pull(),
-            KeyCode::Char('D') => self.cmd_delete(),
-            KeyCode::Char('J') => self.move_thread(1),
-            KeyCode::Char('K') => self.move_thread(-1),
             KeyCode::Esc => {
                 self.overlay = false;
                 self.focus = if self.prev_focus == Focus::Sidebar { Focus::Main } else { self.prev_focus };
@@ -788,7 +834,23 @@ impl App {
                 }
                 self.view_focused();
             }
-            _ => {}
+            // Thread commands work without the prefix here, using their command keys.
+            _ => {
+                if let Some(a) = self.cfg.keys.keymap.action_for(&k)
+                    && matches!(
+                        a,
+                        Action::Rename
+                            | Action::Archive
+                            | Action::NewThread
+                            | Action::Pull
+                            | Action::Delete
+                            | Action::MoveDown
+                            | Action::MoveUp
+                    )
+                {
+                    self.run_action(a);
+                }
+            }
         }
     }
 
@@ -990,10 +1052,18 @@ impl App {
         let dir = &self.paths.project_dir;
         let git_ok = git::repo_root(dir).is_some() && git::has_head(dir);
         let dirty = git_ok && git::is_dirty(dir).unwrap_or(false);
-        self.modal = Some(Modal::NewThread { input: TextArea::single(""), worktree: false, git_ok, dirty, hint: None });
+        self.modal = Some(Modal::NewThread {
+            input: TextArea::single(""),
+            worktree: false,
+            read_only: false,
+            field: NewThreadField::Title,
+            git_ok,
+            dirty,
+            hint: None,
+        });
     }
 
-    fn create_thread(&mut self, title: String, worktree: bool) -> Result<()> {
+    fn create_thread(&mut self, title: String, worktree: bool, read_only: bool) -> Result<()> {
         let main_id = self.store.state.active_main.clone().context("main has no session yet")?;
         let id = format!("t_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
         let sid = uuid::Uuid::new_v4().to_string();
@@ -1036,10 +1106,12 @@ impl App {
             last_viewed_at: Some(now_utc()),
             unread: false,
             archived: false,
+            read_only,
             turns: 0,
         };
         let pty = self.compute_thread_pty();
-        let args = vec!["--resume".into(), main_id, "--fork-session".into(), "--session-id".into(), sid];
+        let mut args = vec!["--resume".into(), main_id, "--fork-session".into(), "--session-id".into(), sid];
+        args.extend(thread_tool_args(read_only));
         let pane = self.spawn(Owner::Thread(id.clone()), cwd, args, pty.height, pty.width)?;
         let g = self.store.state.active_mut().context("no active generation")?;
         g.threads.push(rec);
@@ -1230,28 +1302,47 @@ impl App {
                     Some(Modal::ConfirmQuit)
                 }
             }
-            Modal::NewThread { mut input, mut worktree, git_ok, dirty, mut hint } => {
+            Modal::NewThread { mut input, mut worktree, mut read_only, mut field, git_ok, dirty, mut hint } => {
+                let fields = NewThreadField::available(git_ok);
+                let pos = fields.iter().position(|f| *f == field).unwrap_or(0);
                 if esc {
                     None
-                } else if k.code == KeyCode::Tab || k.code == KeyCode::BackTab {
-                    if git_ok {
-                        worktree = !worktree;
-                    }
-                    Some(Modal::NewThread { input, worktree, git_ok, dirty, hint })
+                } else if k.code == KeyCode::Tab || k.code == KeyCode::BackTab || k.code == KeyCode::Down || k.code == KeyCode::Up {
+                    let back = k.code == KeyCode::BackTab || k.code == KeyCode::Up;
+                    let n = fields.len();
+                    field = fields[if back { (pos + n - 1) % n } else { (pos + 1) % n }];
+                    Some(Modal::NewThread { input, worktree, read_only, field, git_ok, dirty, hint })
                 } else if k.code == KeyCode::Enter {
                     match text::validate_title(&input.text) {
-                        Err(e) => Some(Modal::NewThread { input, worktree, git_ok, dirty, hint: Some(e.into()) }),
+                        Err(e) => Some(Modal::NewThread {
+                            input,
+                            worktree,
+                            read_only,
+                            field: NewThreadField::Title,
+                            git_ok,
+                            dirty,
+                            hint: Some(e.into()),
+                        }),
                         Ok(title) => {
-                            if let Err(e) = self.create_thread(title, worktree) {
+                            if let Err(e) = self.create_thread(title, worktree, read_only) {
                                 self.set_status(format!("Could not create thread: {e:#}"));
                             }
                             None
                         }
                     }
+                } else if field != NewThreadField::Title && k.code == KeyCode::Char(' ') {
+                    match field {
+                        NewThreadField::Worktree => worktree = !worktree,
+                        NewThreadField::ReadOnly => read_only = !read_only,
+                        NewThreadField::Title => {}
+                    }
+                    Some(Modal::NewThread { input, worktree, read_only, field, git_ok, dirty, hint })
                 } else {
+                    // Any other key edits the title.
+                    field = NewThreadField::Title;
                     input.handle(&k);
                     hint = None;
-                    Some(Modal::NewThread { input, worktree, git_ok, dirty, hint })
+                    Some(Modal::NewThread { input, worktree, read_only, field, git_ok, dirty, hint })
                 }
             }
             Modal::Rename { id, mut input, hint: _ } => {

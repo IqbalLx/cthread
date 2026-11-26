@@ -1,6 +1,7 @@
 //! Rendering. Colors come from the terminal's 16-color palette.
 
-use crate::app::{App, Focus, Modal, PullPhase};
+use crate::app::{App, Focus, Modal, NewThreadField, PullPhase};
+use crate::keymap::Action;
 use crate::pane::Pane;
 use crate::policy::{self, Status};
 use crate::text;
@@ -164,10 +165,15 @@ fn draw_sidebar(f: &mut Frame, app: &App, r: Rect, collapsed: bool) {
 
     if !collapsed {
         let fy = inner.y + inner.height - 1;
-        let key = format!("{}n", app.prefix.prefix.label());
+        let key = format!("{} {}", app.prefix.primary().label(), app.cfg.keys.keymap.label(Action::NewThread));
         let label = "+ New thread";
-        let gap = w.saturating_sub(text::width(label) + text::width(&key) + 1).max(1);
-        let s = format!(" {label}{}{key}", " ".repeat(gap.saturating_sub(1)));
+        // Drop the key hint when it doesn't fit (e.g. "^Space n" in a narrow sidebar).
+        let s = if text::width(label) + text::width(&key) + 2 <= w {
+            let gap = w - text::width(label) - text::width(&key) - 1;
+            format!(" {label}{}{key}", " ".repeat(gap))
+        } else {
+            format!(" {label}")
+        };
         put(buf, inner.x, fy, &text::truncate(&s, w), dim(), w);
     }
 }
@@ -252,6 +258,9 @@ fn draw_thread(f: &mut Frame, app: &App, r: Rect) {
     let inner = block.inner(r);
     f.render_widget(block, r);
     let mut sub = format!("forked from main · {}", fork_time(t.created_at));
+    if t.read_only {
+        sub.push_str(" · read-only");
+    }
     if let Some(wt) = &t.worktree {
         sub.push_str(&format!(" · ⎇ {}", wt.branch));
     }
@@ -350,15 +359,67 @@ pub fn draw_pane(buf: &mut Buffer, p: &Pane, area: Rect, placeholder: &str) {
 
 // ------------------------------------------------------------------- status
 
+/// Help-screen rows: one action, or a pair shown as "a / b".
+const HELP_ROWS: &[(Action, Option<Action>, &str)] = &[
+    (Action::NewThread, None, "New thread (forks main)"),
+    (Action::Pull, None, "Pull the open thread into main"),
+    (Action::Close, None, "Close the thread pane"),
+    (Action::FocusLeft, Some(Action::FocusRight), "Focus left / right"),
+    (Action::NextThread, Some(Action::PrevThread), "Open next / previous thread"),
+    (Action::FocusMain, None, "Focus main"),
+    (Action::Rename, None, "Rename thread"),
+    (Action::MoveDown, Some(Action::MoveUp), "Move thread down / up"),
+    (Action::Archive, None, "Archive thread"),
+    (Action::ShowArchived, None, "Show archived threads"),
+    (Action::Delete, None, "Delete thread"),
+    (Action::Shrink, Some(Action::Grow), "Shrink / grow the thread pane"),
+    (Action::ToggleSidebar, None, "Toggle sidebar"),
+    (Action::Help, None, "This help"),
+    (Action::Quit, None, "Quit"),
+];
+
+/// Thread commands that work in the sidebar without the prefix.
+fn sidebar_keys(app: &App) -> String {
+    let km = &app.cfg.keys.keymap;
+    [Action::Rename, Action::Archive, Action::NewThread, Action::Pull, Action::Delete, Action::MoveDown, Action::MoveUp]
+        .into_iter()
+        .map(|a| km.label(a))
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn hints(app: &App) -> String {
-    let p = app.prefix.prefix.label();
-    format!("{p}n new  {p}p pull  {p}x close  {p}h/l focus  {p}j/k next/prev  {p}? help")
+    let km = &app.cfg.keys.keymap;
+    let p = app.prefix.primary().label();
+    let pair = |a: Action, b: Action| {
+        let (x, y) = (km.label(a), km.label(b));
+        match (x.is_empty(), y.is_empty()) {
+            (false, false) => format!("{x}/{y}"),
+            (false, true) => x,
+            _ => y,
+        }
+    };
+    let items = [
+        (km.label(Action::NewThread), "new"),
+        (km.label(Action::Pull), "pull"),
+        (km.label(Action::Close), "close"),
+        (pair(Action::FocusLeft, Action::FocusRight), "focus"),
+        (pair(Action::NextThread, Action::PrevThread), "next/prev"),
+        (km.label(Action::Help), "help"),
+    ];
+    let parts: Vec<String> =
+        items.into_iter().filter(|(k, _)| !k.is_empty()).map(|(k, what)| format!("{k} {what}")).collect();
+    format!("{p} {}", parts.join(" · "))
 }
 
 fn draw_status(f: &mut Frame, app: &App, r: Rect) {
     let now = Instant::now();
     let (s, style) = if app.prefix.hint_visible(now) {
-        (format!("{}…", app.prefix.prefix.label()), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+        (
+            format!("{} … waiting for a command key (? for help)", app.prefix.primary().label()),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )
     } else if let Some(m) = app.status_text(now) {
         (m.to_string(), Style::default().fg(Color::Yellow))
     } else {
@@ -399,8 +460,8 @@ fn key_hint(pairs: &[(&str, &str)]) -> Line<'static> {
 fn draw_modal(f: &mut Frame, app: &App, area: Rect) -> Option<Position> {
     let modal = app.modal.as_ref()?;
     match modal {
-        Modal::NewThread { input, worktree, git_ok, dirty, hint } => {
-            let h = 7 + (*git_ok as u16) + (*git_ok && *dirty) as u16;
+        Modal::NewThread { input, worktree, read_only, field, git_ok, dirty, hint } => {
+            let h = 9 + (*git_ok as u16) + (*git_ok && *dirty) as u16;
             let r = centered(area, 60, h);
             f.render_widget(Clear, r);
             let b = modal_block("New thread".into());
@@ -410,28 +471,42 @@ fn draw_modal(f: &mut Frame, app: &App, area: Rect) -> Option<Position> {
             let field_w = inner.width.saturating_sub(10) as usize;
             let (shown, cur) = scroll_field(&input.text, input.cursor, field_w);
             lines.push(Line::from(vec![Span::styled("Title     ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(shown)]));
+            let checkbox = |on: bool, label: &str, f: NewThreadField| {
+                let sel = *field == f;
+                let s = format!("{}[{}] {label}", if sel { "› " } else { "  " }, if on { "x" } else { " " });
+                if sel { Line::styled(s, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)) } else { Line::raw(s) }
+            };
             if *git_ok {
-                lines.push(Line::raw(format!("[{}] Isolate in a git worktree", if *worktree { "x" } else { " " })));
+                lines.push(checkbox(*worktree, "Isolate in a git worktree", NewThreadField::Worktree));
                 if *dirty {
                     lines.push(Line::styled(
-                        "! Uncommitted changes in main won't be in the worktree",
+                        "    ! Uncommitted changes in main won't be in the worktree",
                         Style::default().fg(Color::Yellow),
                     ));
                 }
             }
+            lines.push(checkbox(*read_only, "Read-only tools", NewThreadField::ReadOnly));
+            lines.push(Line::styled(
+                if *read_only {
+                    "    Only Read, Grep, Glob, WebFetch, WebSearch (no MCP)"
+                } else {
+                    "    Same tools as main, minus subagents and Monitor"
+                },
+                dim(),
+            ));
             match hint {
                 Some(hn) => lines.push(Line::styled(hn.clone(), dim().add_modifier(Modifier::ITALIC))),
                 None if input.text.trim().is_empty() => lines.push(Line::styled("Type a title to create the thread", dim().add_modifier(Modifier::ITALIC))),
                 None => lines.push(Line::raw("")),
             }
-            let mut keys = vec![("Enter", "create")];
-            if *git_ok {
-                keys.push(("Tab", "toggle"));
-            }
-            keys.push(("Esc", "cancel"));
+            let keys = if *field == NewThreadField::Title {
+                vec![("Enter", "create"), ("Tab", "options"), ("Esc", "cancel")]
+            } else {
+                vec![("Enter", "create"), ("Space", "toggle"), ("Tab", "next"), ("Esc", "cancel")]
+            };
             lines.push(key_hint(&keys));
             f.render_widget(Paragraph::new(lines), inner);
-            Some(Position { x: inner.x + 10 + cur as u16, y: inner.y + 2 })
+            (*field == NewThreadField::Title).then_some(Position { x: inner.x + 10 + cur as u16, y: inner.y + 2 })
         }
         Modal::Rename { input, hint, .. } => {
             let r = centered(area, 60, 6);
@@ -575,37 +650,37 @@ fn draw_modal(f: &mut Frame, app: &App, area: Rect) -> Option<Position> {
             None
         }
         Modal::Help => {
-            let p = app.prefix.prefix.label();
-            let rows: Vec<(String, &str)> = vec![
-                (format!("{p} n"), "New thread (forks main)"),
-                (format!("{p} p"), "Pull the open thread into main"),
-                (format!("{p} x"), "Close the thread pane"),
-                (format!("{p} h / l"), "Focus left / right"),
-                (format!("{p} j / k"), "Open next / previous thread"),
-                (format!("{p} 1…9"), "Open thread by position"),
-                (format!("{p} m"), "Focus main"),
-                (format!("{p} r"), "Rename thread"),
-                (format!("{p} J / K"), "Move thread down / up"),
-                (format!("{p} a"), "Archive thread"),
-                (format!("{p} A"), "Show archived threads"),
-                (format!("{p} D"), "Delete thread"),
-                (format!("{p} < / >"), "Shrink / grow the thread pane"),
-                (format!("{p} b"), "Toggle sidebar"),
-                (format!("{p} ?"), "This help"),
-                (format!("{p} q"), "Quit"),
-                (format!("{p} {p}"), "Send a literal prefix key"),
-                ("".into(), ""),
-                ("sidebar".into(), "j/k move · Enter open · r a n D J K · Esc back"),
-            ];
+            let p = app.prefix.primary().label();
+            let others: Vec<String> = app.prefix.prefixes[1..].iter().map(|k| k.label()).collect();
+            let also = if others.is_empty() { String::new() } else { format!("{} also works as the prefix", others.join(", ")) };
+            let km = &app.cfg.keys.keymap;
+            let mut rows: Vec<(String, String)> = Vec::new();
+            for (a, b, help) in HELP_ROWS {
+                let keys: Vec<String> =
+                    [Some(*a), *b].into_iter().flatten().map(|x| km.label(x)).filter(|l| !l.is_empty()).collect();
+                if !keys.is_empty() {
+                    rows.push((format!("{p} {}", keys.join(" / ")), help.to_string()));
+                }
+                if *b == Some(Action::PrevThread) {
+                    rows.push((format!("{p} 1…9"), "Open thread by position".into()));
+                }
+            }
+            rows.push((format!("{p} {p}"), "Send a literal prefix key".into()));
+            if !also.is_empty() {
+                rows.push(("".into(), also));
+            }
+            rows.push(("".into(), "".into()));
+            rows.push(("sidebar".into(), format!("j/k move · Enter open · {} · Esc back", sidebar_keys(app))));
             let h = (rows.len() as u16 + 4).min(area.height.saturating_sub(2));
             let r = centered(area, 64, h);
             f.render_widget(Clear, r);
             let b = modal_block("Keys".into());
             let inner = b.inner(r);
             f.render_widget(b, r);
+            let kw = rows.iter().map(|(k, _)| text::width(k)).max().unwrap_or(0) + 2;
             let mut lines: Vec<Line> = rows
                 .into_iter()
-                .map(|(k, v)| Line::from(vec![Span::styled(text::pad(&k, 14), Style::default().fg(ACCENT)), Span::raw(v)]))
+                .map(|(k, v)| Line::from(vec![Span::styled(text::pad(&k, kw), Style::default().fg(ACCENT)), Span::raw(v)]))
                 .collect();
             lines.push(Line::raw(""));
             lines.push(key_hint(&[("Esc", "close")]));

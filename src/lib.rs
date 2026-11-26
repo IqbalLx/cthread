@@ -4,6 +4,7 @@ pub mod app;
 pub mod config;
 pub mod git;
 pub mod hooks;
+pub mod keymap;
 pub mod keys;
 pub mod layout;
 pub mod log;

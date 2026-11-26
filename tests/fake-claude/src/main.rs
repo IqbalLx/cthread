@@ -23,10 +23,24 @@ struct Args {
     settings: Option<PathBuf>,
     print: bool,
     prompt: Option<String>,
+    /// Tool restrictions, echoed in the banner so tests can check them.
+    tools: Option<String>,
+    disallowed: Option<String>,
+    strict_mcp: bool,
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { session_id: None, resume: None, fork: false, settings: None, print: false, prompt: None };
+    let mut a = Args {
+        session_id: None,
+        resume: None,
+        fork: false,
+        settings: None,
+        print: false,
+        prompt: None,
+        tools: None,
+        disallowed: None,
+        strict_mcp: false,
+    };
     let mut it = std::env::args().skip(1);
     while let Some(x) = it.next() {
         match x.as_str() {
@@ -40,6 +54,9 @@ fn parse_args() -> Args {
             "--settings" => a.settings = it.next().map(PathBuf::from),
             "-p" | "--print" => a.print = true,
             "--no-session-persistence" => {}
+            "--tools" => a.tools = it.next(),
+            "--disallowedTools" | "--disallowed-tools" => a.disallowed = it.next(),
+            "--strict-mcp-config" => a.strict_mcp = true,
             "--model" => {
                 it.next();
             }
@@ -143,6 +160,8 @@ fn raw_mode() {
 
 struct Ui {
     sid: String,
+    /// Banner suffix describing tool limits, e.g. " [tools=Read disallowed=Agent bg=off]".
+    limits: String,
     history: Vec<(String, String)>,
     input: String,
     note: String,
@@ -151,7 +170,7 @@ struct Ui {
 impl Ui {
     fn draw(&self) {
         let mut o = String::from("\x1b[H\x1b[2J");
-        o.push_str(&format!("fake-claude {}\r\n", &self.sid[..8.min(self.sid.len())]));
+        o.push_str(&format!("fake-claude {}{}\r\n", &self.sid[..8.min(self.sid.len())], self.limits));
         for (k, t) in &self.history {
             let mark = if k == "user" { ">" } else { "⏺" };
             o.push_str(&format!("{mark} {t}\r\n"));
@@ -203,7 +222,21 @@ fn main() {
     let hooks = Hooks { settings: a.settings.clone() };
     raw_mode();
     print!("\x1b[?2004h");
-    let mut ui = Ui { sid: sid.clone(), history, input: String::new(), note: String::new() };
+    let mut limits = Vec::new();
+    if let Some(t) = &a.tools {
+        limits.push(format!("tools={t}"));
+    }
+    if let Some(d) = &a.disallowed {
+        limits.push(format!("disallowed={d}"));
+    }
+    if a.strict_mcp {
+        limits.push("no-mcp".to_string());
+    }
+    if std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref() == Ok("1") {
+        limits.push("bg=off".to_string());
+    }
+    let limits = if limits.is_empty() { String::new() } else { format!(" [{}]", limits.join(" ")) };
+    let mut ui = Ui { sid: sid.clone(), limits, history, input: String::new(), note: String::new() };
     hooks.fire("SessionStart", &ui.sid, json!({"source": source}));
     ui.draw();
 

@@ -16,9 +16,9 @@ main's input box and send it if you want to.
 │ ◐ auth refactor    ││                               │┃                                 ┃
 │ ! fix flaky test   ││                               │┃                                 ┃
 │ ◌ ⎇ db schema      ││                               │┃                                 ┃
-│ + New thread   ^]n ││ > _                           │┃ > _                             ┃
+│ + New thread   ^q n││ > _                           │┃ > _                             ┃
 └────────────────────┘└───────────────────────────────┘┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
- ^]n new  ^]p pull  ^]x close  ^]h/l focus  ^]j/k next/prev  ^]? help
+ ^q n new · p pull · x close · h/l focus · j/k next/prev · ? help
 ```
 
 cthread runs the official `claude` binary in a PTY, so it uses your existing
@@ -67,13 +67,21 @@ cargo install --path .
 
 ## Using it
 
-- Send at least one message in main, then press **`^]n`** and type a title.
+- Send at least one message in main, then press **`Ctrl-Q`** then **`n`** and type a title.
   The thread forks main *as it is right now* and opens on the right.
-- Tick **Isolate in a git worktree** (`Tab`) to give the thread its own
-  branch (`cthread/<slug>`) and folder (`../<repo>-<slug>`). Uncommitted
-  changes in main are not copied into the worktree; the prompt warns you
-  when there are some.
-- **`^]p`** summarizes the open thread in a throwaway fork and shows the
+- In the new-thread dialog, `Tab` moves to the options below the title and
+  `Space` ticks the highlighted one:
+  - **Isolate in a git worktree** gives the thread its own branch
+    (`cthread/<slug>`) and folder (`../<repo>-<slug>`). Uncommitted changes in
+    main are not copied into the worktree; the dialog warns you when there are
+    some.
+  - **Read-only tools** limits the thread to Read, Grep, Glob, WebFetch and
+    WebSearch, with no MCP servers. Use it for threads that should only
+    explore and answer. The thread header shows `read-only`.
+- Every thread runs **without background tasks, subagents or Monitor**. That
+  keeps a side conversation from starting long-running work of its own. Main
+  keeps all of its tools.
+- **`Ctrl-Q p`** summarizes the open thread in a throwaway fork and shows the
   summary. You can edit it (`e` in the app, `E` in `$EDITOR`), regenerate it (`r`),
   or press `Enter` to paste it into main's input. cthread never presses Enter for you.
 - Sidebar glyphs: `◐` working · `●` unread · `!` needs you (a permission
@@ -86,34 +94,41 @@ cargo install --path .
 
 ## Keys
 
-Every command uses a prefix (default **Ctrl-]**, like tmux). All other keys
-go to the focused pane unchanged, so Claude Code's own shortcuts work.
+Every command is a prefix key followed by a command key, like tmux: press
+**Ctrl-Q**, let go, then press the command key. While cthread waits for the
+command key, the status line shows `^q …`. **Ctrl-]** works as a prefix too.
+All other keys go to the focused pane unchanged, so Claude Code's own
+shortcuts work. Claude Code doesn't use Ctrl-Q or Ctrl-] by default.
 
-| Keys | Action |
-|---|---|
-| `^] n` | New thread (forks main; disabled inside a thread) |
-| `^] p` | Pull the open/selected thread into main |
-| `^] x` | Close the thread pane |
-| `^] h` / `l` | Focus left / right (sidebar, main, thread) |
-| `^] j` / `k` | Open next / previous thread |
-| `^] 1`…`9` | Open thread by position |
-| `^] m` | Focus main |
-| `^] r` | Rename thread |
-| `^] J` / `K` | Move thread down / up |
-| `^] a` / `A` | Archive thread / show archived |
-| `^] D` | Delete thread (transcripts are never deleted) |
-| `^] <` / `>` | Shrink / grow the thread pane |
-| `^] b` | Toggle sidebar (narrow mode: expand it) |
-| `^] ?` | Help |
-| `^] q` | Quit |
-| `^] ^]` | Send a literal Ctrl-] |
+Both the prefix and every command key can be changed; see
+[Changing keys](#changing-keys). These are the defaults:
 
-When the sidebar is focused, the plain keys `j/k`, `Enter`, `r`, `a`, `n`, `D`,
-`J/K` and `Esc` work without the prefix. Mouse: click rows and panes, click `✕`
+| Keys | Action | Config name |
+|---|---|---|
+| `^q n` | New thread (forks main; disabled inside a thread) | `new_thread` |
+| `^q p` | Pull the open/selected thread into main | `pull` |
+| `^q x` | Close the thread pane | `close` |
+| `^q h` / `l` | Focus left / right (sidebar, main, thread) | `focus_left` / `focus_right` |
+| `^q j` / `k` | Open next / previous thread | `next_thread` / `prev_thread` |
+| `^q 1`…`9` | Open thread by position | (fixed) |
+| `^q m` | Focus main | `focus_main` |
+| `^q r` | Rename thread | `rename` |
+| `^q J` / `K` | Move thread down / up | `move_down` / `move_up` |
+| `^q a` / `A` | Archive thread / show archived | `archive` / `show_archived` |
+| `^q D` | Delete thread (transcripts are never deleted) | `delete` |
+| `^q <` / `>` | Shrink / grow the thread pane | `shrink` / `grow` |
+| `^q b` | Toggle sidebar (narrow mode: expand it) | `toggle_sidebar` |
+| `^q ?` | Help (shows your current keys) | `help` |
+| `^q q` | Quit | `quit` |
+| `^q ^q` | Send the prefix key itself to Claude Code | (fixed) |
+
+When the sidebar is focused, `j/k`, `Enter` and `Esc` move, open and leave, and
+the command keys for rename, archive, new thread, pull, delete and move work
+without the prefix. Mouse: click rows and panes, click `✕`
 to close, drag the divider, scroll to see history.
 
 Below 120 columns cthread switches to **narrow mode**: one pane at a time and a
-3-column sidebar of glyphs (`^]b` expands it).
+3-column sidebar of glyphs (`^q b` expands it).
 
 ## Configuration
 
@@ -121,7 +136,7 @@ Below 120 columns cthread switches to **narrow mode**: one pane at a time and a
 
 ```toml
 [keys]
-prefix = "C-]"
+prefix = ["C-q", "C-]"]   # one key or a list; see "Changing keys"
 
 [ui]
 sidebar_width = 22
@@ -160,7 +175,7 @@ array:
 command = "ccr code"                                  # program + fixed args
 # command = "~/bin/claude-work --profile 'my work'"   # wrapper script; quotes work
 # command = ["/opt/claude tools/claude", "--foo"]     # array form, no splitting
-pull_command = "claude"                               # optional, for ^]p summaries
+pull_command = "claude"                               # optional, for pull summaries
 ```
 
 The command is run directly, not through your shell, so `~`, `$VARS`, aliases and
@@ -176,6 +191,42 @@ exec claude "$@"
 `cthread doctor` too). `doctor` shows the resolved command and its `--version`.
 The old `path = "…"` key still works.
 
+### Changing keys
+
+The prefix can be one key or a list; any of them starts a command, and the first
+is shown in hints. Write keys as `C-<key>` (Ctrl), `M-<key>` (Alt/Option, which
+needs your terminal to send Option as Meta) or `C-Space`.
+
+`[keys.commands]` changes the key pressed after the prefix. Each entry is an
+action's config name (see the table under [Keys](#keys)) with one key or a list.
+Plain keys are case-sensitive (`"N"` is Shift-n), and `C-`/`M-` keys work too.
+An empty list unbinds an action.
+
+```toml
+[keys]
+prefix = "C-a"
+
+[keys.commands]
+new_thread = "t"
+close = ["w", "C-w"]
+quit = []            # no quit key; use the terminal to close cthread
+```
+
+The help screen and status line show your keys. Mistakes are reported as
+warnings at startup, and the affected action keeps its default:
+
+- an unknown action name;
+- a key that can't be parsed;
+- `1`–`9`, which always open threads by position;
+- a key already bound to another action.
+
+A key you set wins over another action's default key. If two of your own
+settings use the same key, the action listed first in the table gets it.
+
+If a prefix seems to do nothing, your terminal or keyboard layout may be
+swallowing it. For example, `Ctrl-]` can't be typed on many non-US layouts, and
+`Ctrl-Space` is macOS's input-source shortcut. Pick a letter key instead.
+
 State is kept outside the repo, one JSON file per folder:
 `~/Library/Application Support/cthread/` on macOS and `~/.local/state/cthread/` on Linux.
 `cthread prune --older-than 30d` forgets old main sessions. It only touches
@@ -184,15 +235,21 @@ cthread's state, never transcripts or worktrees.
 ## luvus notes
 
 cthread is an ordinary TUI, so it runs inside a luvus pane. Run one instance per
-project folder; luvus handles switching between projects. The default prefix
-avoids luvus's `Ctrl-Space`. If mouse capture interferes with luvus's text
-selection, set `ui.mouse = false`.
+project folder; luvus handles switching between projects. The default prefix,
+Ctrl-Q, doesn't clash with luvus's `Ctrl-Space`. If mouse capture interferes
+with luvus's text selection, set `ui.mouse = false`.
 
 ## How it works
 
 - Main runs `claude --session-id <uuid>` and later `claude --resume <id>`.
   A thread is created with `claude --resume <main> --fork-session --session-id <uuid>`,
   in a worktree folder if you asked for one.
+- Every thread start (the fork, and each later `--resume`) adds
+  `--disallowedTools Agent,Monitor,Workflow` and sets
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. Read-only threads also get
+  `--tools Read,Grep,Glob,WebFetch,WebSearch --strict-mcp-config`. Claude Code
+  doesn't restore tool limits on resume, so cthread saves the choice per thread
+  and passes the flags each time.
 - Each child gets `--settings <generated.json>`, which adds hooks that run
   `cthread hook`. That command forwards the hook JSON over a Unix socket.
   This is how cthread knows what each session is doing (working, stopped,
